@@ -1,0 +1,3 @@
+alpine weather (WegenerNet weather network)
+    information page here: https://wegenernet.org/portal/v7.1/2021/1
+    data downloaded from cloud archive linked on that page: https://wegccloud.uni-graz.at/s/HtoBpagBPjaeMqB?path=%2F2021%2F1

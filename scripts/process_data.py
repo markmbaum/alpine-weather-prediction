@@ -24,7 +24,7 @@ cols = [
 #new columns names for those that are kept
 rcols = [
     'station',
-    'datetime',
+    'timestamp',
     'RH',
     'P',
     'T'
@@ -35,13 +35,16 @@ dirout = join('..', 'data', 'pro')
 
 #info for splitting the datetime column
 ts = [
-    ('yr', slice(0,4), int16),
-    ('mon', slice(5,7), int8),
+    ('year', slice(0,4), int16),
+    ('month', slice(5,7), int8),
     ('day', slice(8,10), int8),
-    ('hr', slice(11,13), int8),
-    ('min', slice(14,16), int8),
-    ('sec', slice(17,19), int8)
+    ('hour', slice(11,13), int8),
+    ('minute', slice(14,16), int8),
+    ('second', slice(17,19), int8)
 ]
+
+#time to reference from
+t0 = to_datetime('2007-01-01')
 
 #------------------------------------------------------------------------------
 
@@ -53,13 +56,10 @@ def process_table(path):
     df.columns = rcols
     #convert station number to short integer format (all are <156)
     df.station = df.station.astype(int16)
-    #split datetime
-    for (c,s,t) in ts:
-        df[c] = [t(x[s]) for x in df.datetime]
-    df.drop('datetime', axis=1, inplace=True)
-    #ensure no off-minute records
-    assert all(df.sec == 0)
-    df.drop('sec', axis=1, inplace=True)
+    #convert datetime
+    df.timestamp = to_datetime(df.timestamp)
+    df['time'] = (df.timestamp - t0).apply(lambda x: x.total_seconds())
+    df.drop('timestamp', axis=1, inplace=True)
     #reduce float precision of meteorolgical variables
     for c in rcols[-3:]:
         df[c] = df[c].astype(float32)

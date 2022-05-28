@@ -1,7 +1,8 @@
-from os import walk
+from os import walk, listdir, remove
 from os.path import join
 from pandas import read_csv, to_datetime, concat
 from numpy import *
+from scipy.signal import detrend
 from multiprocessing import Pool
 
 #------------------------------------------------------------------------------
@@ -10,7 +11,7 @@ from multiprocessing import Pool
 dirin = join('..', 'data', 'raw', 'wegenernet', '2022')
 
 #number of processes/cpus to use
-nproc = 7
+nproc = 4
 
 #columns to keep
 cols = [
@@ -58,16 +59,28 @@ def process_table(path):
     df.station = df.station.astype(int16)
     #convert datetime
     df.timestamp = to_datetime(df.timestamp)
-    df['time'] = (df.timestamp - t0).apply(lambda x: x.total_seconds())
+    df['time'] = (df.timestamp - t0).apply(lambda x: int32(x.total_seconds())//60)
     df.drop('timestamp', axis=1, inplace=True)
     #reduce float precision of meteorolgical variables
     for c in rcols[-3:]:
         df[c] = df[c].astype(float32)
     return df
 
+def detrend_temperature(df):
+    #make sure of proper sorting
+    df.sort_values('time', inplace=True)
+    #detrend temperature record, preserving the mean
+    df['T'] = df['T'].mean() + detrend(df['T'].values)
+    #return the same df
+    print('station {} detrended'.format(df.station.iat[0]))
+    return(df)
+
 #------------------------------------------------------------------------------
 
 if __name__ == '__main__':
+
+    #start up the process pool
+    pool = Pool(processes=nproc)
 
     #assemble target file paths
     paths = []
@@ -80,16 +93,29 @@ if __name__ == '__main__':
                     paths.append(join(root, fn))
     print(len(paths), 'target files found')
 
-    #start a pool of workers and process tables in parallel
-    pool = Pool(processes=nproc)
+    #clear the output directory
+    for fn in listdir(dirout):
+        remove(join(dirout, fn))
+        print("removed file:", join(dirout, fn))
+
+    #process tables in parallel
     tasks = [pool.apply_async(process_table, (path,)) for path in paths]
     weg = [task.get() for task in tasks]
 
-    #combine and write columns individually
+    #combine
     print('concatenating...')
     weg = concat(weg, axis=0, ignore_index=True)
     print(weg)
-    for col in weg:
-        fn = join(dirout, col + '_' + str(weg[col].dtype))
-        weg[col].values.tofile(fn)
-        print('file written:', fn)
+
+    #detrend each station's temperature signal
+    print('detrending temperature records...')
+    weg = [x[1] for x in weg.groupby('station')]
+    tasks = [pool.apply_async(detrend_temperature, (df,)) for df in weg]
+    weg = concat([task.get() for task in tasks], axis=0, ignore_index=True)
+    print(weg)
+
+    #write a single binary format table to file
+    p = join(dirout, 'wegenernet.feather')
+    weg.to_feather(p)
+    print('file written:', p)
+    pool.close()
